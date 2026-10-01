@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   MOCK_MACHINES,
   MOCK_TOOLS,
   MOCK_MATERIALS,
-  MOCK_ACTIVE_OPERATIONS,
 } from '../data/mock-cnc';
+import { useCncData } from '../context/CncDataContext';
 import {
   computeMachiningPhysics,
   generateSweetSpotCurve,
@@ -32,26 +32,34 @@ import {
   Clock,
   Compass,
   Zap,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
 
 export const OptimizationDashboard: React.FC = () => {
-  // 1. Core Selection State
-  const [selectedMachineId, setSelectedMachineId] = useState<string>(MOCK_MACHINES[0].id);
-  const [selectedToolId, setSelectedToolId] = useState<string>(MOCK_TOOLS[0].id);
-  const [selectedMaterialId, setSelectedMaterialId] = useState<string>(MOCK_MATERIALS[0].id);
+  const { machines, tools, materials, isLive, refreshData } = useCncData();
 
-  // Active instances
+  // 1. Core Selection State
+  const [selectedMachineId, setSelectedMachineId] = useState<string>('');
+  const [selectedToolId, setSelectedToolId] = useState<string>('');
+  const [selectedMaterialId, setSelectedMaterialId] = useState<string>('');
+
+  // Active instances with fallbacks
+  const currentMachineId = selectedMachineId || machines[0]?.id || MOCK_MACHINES[0].id;
+  const currentToolId = selectedToolId || tools[0]?.id || MOCK_TOOLS[0].id;
+  const currentMaterialId = selectedMaterialId || materials[0]?.id || MOCK_MATERIALS[0].id;
+
   const machine = useMemo(
-    () => MOCK_MACHINES.find((m) => m.id === selectedMachineId) || MOCK_MACHINES[0],
-    [selectedMachineId]
+    () => machines.find((m) => m.id === currentMachineId) || machines[0] || MOCK_MACHINES[0],
+    [machines, currentMachineId]
   );
   const tool = useMemo(
-    () => MOCK_TOOLS.find((t) => t.id === selectedToolId) || MOCK_TOOLS[0],
-    [selectedToolId]
+    () => tools.find((t) => t.id === currentToolId) || tools[0] || MOCK_TOOLS[0],
+    [tools, currentToolId]
   );
   const material = useMemo(
-    () => MOCK_MATERIALS.find((m) => m.id === selectedMaterialId) || MOCK_MATERIALS[0],
-    [selectedMaterialId]
+    () => materials.find((m) => m.id === currentMaterialId) || materials[0] || MOCK_MATERIALS[0],
+    [materials, currentMaterialId]
   );
 
   // 2. Interactive Parameter Sliders State
@@ -65,6 +73,18 @@ export const OptimizationDashboard: React.FC = () => {
   const [ap, setAp] = useState<number>(defaultAp);
   const [ae, setAe] = useState<number>(defaultAe);
 
+  // Sync parameters when tool changes
+  useEffect(() => {
+    const recVc = Math.round((tool.recommended_vc_min + tool.recommended_vc_max) / 2);
+    const recF = Number(((tool.recommended_feed_min + tool.recommended_feed_max) / 2).toFixed(3));
+    const recAp = Number((tool.max_depth_of_cut * 0.5).toFixed(1));
+    const recAe = Number((tool.diameter * 0.5).toFixed(1));
+    setVc(recVc);
+    setFeed(recF);
+    setAp(recAp);
+    setAe(recAe);
+  }, [tool.id]);
+
   // Current time in cut state for glowing marker
   const [currentTimeInCut, setCurrentTimeInCut] = useState<number>(15.0);
 
@@ -72,10 +92,10 @@ export const OptimizationDashboard: React.FC = () => {
   const [chartView, setChartView] = useState<'wear_curve' | 'sweet_spot' | 'dual'>('wear_curve');
   const [showFormulaModal, setShowFormulaModal] = useState<boolean>(false);
 
-  // Update parameters when tool changes
+  // Update parameters when tool changes via selection
   const handleToolChange = (newToolId: string) => {
     setSelectedToolId(newToolId);
-    const newTool = MOCK_TOOLS.find((t) => t.id === newToolId) || MOCK_TOOLS[0];
+    const newTool = tools.find((t) => t.id === newToolId) || tools[0] || MOCK_TOOLS[0];
     const recVc = Math.round((newTool.recommended_vc_min + newTool.recommended_vc_max) / 2);
     const recF = Number(((newTool.recommended_feed_min + newTool.recommended_feed_max) / 2).toFixed(3));
     const recAp = Number((newTool.max_depth_of_cut * 0.5).toFixed(1));
@@ -133,20 +153,20 @@ export const OptimizationDashboard: React.FC = () => {
 
   // Prepare searchable options for machines (50 items)
   const machineOptions: SelectOption[] = useMemo(() => {
-    return MOCK_MACHINES.map((m) => ({
+    return machines.map((m) => ({
       id: m.id,
       title: m.name,
-      subtitle: `${m.max_rpm.toLocaleString()} RPM • ${m.max_spindle_power} kW • ${m.spindle_taper || 'Spindle'}`,
+      subtitle: `${m.max_rpm?.toLocaleString() || 0} RPM • ${m.max_spindle_power} kW • ${m.spindle_taper || 'Spindle'}`,
       badge: m.type,
       badgeColor: m.type.includes('5-axis') ? 'blue' : 'cyan',
       category: m.type,
       details: m.location,
     }));
-  }, []);
+  }, [machines]);
 
   // Prepare searchable options for tools (150 items)
   const toolOptions: SelectOption[] = useMemo(() => {
-    return MOCK_TOOLS.map((t) => ({
+    return tools.map((t) => ({
       id: t.id,
       title: t.name,
       subtitle: `Ø${t.diameter}mm • ${t.flute_count}F • ${t.coating} • $${t.cost}`,
@@ -155,11 +175,11 @@ export const OptimizationDashboard: React.FC = () => {
       category: t.category,
       details: `Rec Vc: ${t.recommended_vc_min}-${t.recommended_vc_max} m/min • Max ap: ${t.max_depth_of_cut}mm`,
     }));
-  }, []);
+  }, [tools]);
 
   // Prepare searchable options for materials (25 items)
   const materialOptions: SelectOption[] = useMemo(() => {
-    return MOCK_MATERIALS.map((mat) => ({
+    return materials.map((mat) => ({
       id: mat.id,
       title: mat.material_name,
       subtitle: `${mat.hardness_brinell} HB • ${mat.machinability_rating}% Machinability • C=${mat.taylor_c_value} m/min`,
@@ -168,7 +188,7 @@ export const OptimizationDashboard: React.FC = () => {
       category: mat.category,
       details: mat.description,
     }));
-  }, []);
+  }, [materials]);
 
   return (
     <div className="w-full">
@@ -183,9 +203,12 @@ export const OptimizationDashboard: React.FC = () => {
               <h2 className="text-xs sm:text-sm font-bold uppercase tracking-wider font-mono text-cyan-400 flex items-center gap-2">
                 <Settings className="w-4 h-4" /> Setup Configuration
               </h2>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 font-bold border border-cyan-500/30">
-                ACTIVE
-              </span>
+              <div className="flex items-center gap-1.5 text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                <span className={isLive ? 'text-emerald-300 font-bold' : 'text-amber-300 font-bold'}>
+                  {isLive ? 'SUPABASE' : 'STANDBY'}
+                </span>
+              </div>
             </div>
 
             {/* 1. Machine Searchable Select (50 Machines) */}
@@ -194,7 +217,7 @@ export const OptimizationDashboard: React.FC = () => {
                 label="Target CNC Machine"
                 icon={<Cpu className="w-3.5 h-3.5 text-blue-400" />}
                 options={machineOptions}
-                selectedId={selectedMachineId}
+                selectedId={currentMachineId}
                 onSelect={(id) => setSelectedMachineId(id)}
                 placeholder="Search Haas, DMG, Mazak, Hermle..."
                 filterCategories={['5-axis', '5-axis Mill-Turn', '3-axis VMC', '3-axis lathe']}
@@ -221,7 +244,7 @@ export const OptimizationDashboard: React.FC = () => {
                 label="Cutting Tool"
                 icon={<Wrench className="w-3.5 h-3.5 text-cyan-400" />}
                 options={toolOptions}
-                selectedId={selectedToolId}
+                selectedId={currentToolId}
                 onSelect={handleToolChange}
                 placeholder="Search diameter, flute, coating..."
                 filterCategories={['end mill', 'face mill', 'insert', 'ball nose', 'drill']}
@@ -237,7 +260,7 @@ export const OptimizationDashboard: React.FC = () => {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400">Unit Tool Cost:</span>
-                  <span className="text-amber-400 font-bold">${tool.cost.toFixed(2)}</span>
+                  <span className="text-amber-400 font-bold">${tool.cost?.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -248,7 +271,7 @@ export const OptimizationDashboard: React.FC = () => {
                 label="Workpiece Material"
                 icon={<Layers className="w-3.5 h-3.5 text-amber-400" />}
                 options={materialOptions}
-                selectedId={selectedMaterialId}
+                selectedId={currentMaterialId}
                 onSelect={(id) => setSelectedMaterialId(id)}
                 placeholder="Search Titanium, Inconel, 6061..."
                 filterCategories={[

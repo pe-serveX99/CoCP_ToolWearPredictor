@@ -1,5 +1,3 @@
-'use client';
-
 import React, { useState, useEffect } from 'react';
 import {
   Shield,
@@ -10,7 +8,10 @@ import {
   Clock,
   Radio,
   Sliders,
+  Database,
+  RefreshCw,
 } from 'lucide-react';
+import { useCncData } from '../context/CncDataContext';
 
 interface NavigationHeaderProps {
   activeTab: 'calculator' | 'catalog' | 'floor';
@@ -22,6 +23,14 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
   onTabChange,
 }) => {
   const [timeStr, setTimeStr] = useState<string>('');
+  const { machines, isLive, isLoading, refreshData } = useCncData();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    await refreshData();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   useEffect(() => {
     const updateTime = () => {
@@ -96,12 +105,49 @@ export const NavigationHeader: React.FC<NavigationHeaderProps> = ({
             </button>
           </nav>
 
-          {/* Right Status Indicator */}
-          <div className="flex items-center gap-4 font-mono text-xs">
+          {/* Right Status Indicators */}
+          <div className="flex items-center gap-3 font-mono text-xs">
+            {/* Supabase PostgreSQL Status Pill */}
+            <div
+              className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border text-xs font-mono transition-all ${
+                isLive
+                  ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                  : 'bg-amber-950/50 border-amber-500/40 text-amber-300'
+              }`}
+              title={
+                isLive
+                  ? 'Connected to live Supabase PostgreSQL tables'
+                  : 'Connected to Supabase endpoint (awaiting table migration / seed)'
+              }
+            >
+              <Database className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="hidden sm:inline">
+                {isLive ? 'SUPABASE: LIVE' : 'SUPABASE: STANDBY'}
+              </span>
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isLive
+                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse'
+                    : 'bg-amber-400'
+                }`}
+              />
+              <button
+                onClick={handleRefresh}
+                disabled={isRefreshing || isLoading}
+                className="hover:text-white transition-transform active:rotate-180 p-0.5"
+                title="Sync with Supabase"
+              >
+                <RefreshCw
+                  className={`w-3 h-3 ${isRefreshing || isLoading ? 'animate-spin text-cyan-400' : 'text-slate-400'}`}
+                />
+              </button>
+            </div>
+
+            {/* Telemetry pill */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-300">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
-              <span className="text-[11px] text-slate-400">SHOP TELEMETRY:</span>
-              <span className="text-[11px] font-bold text-emerald-400">50 MACHINES ONLINE</span>
+              <span className="w-2 h-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(6,182,212,0.8)] animate-pulse" />
+              <span className="text-[11px] text-slate-400">MACHINES:</span>
+              <span className="text-[11px] font-bold text-cyan-300">{machines.length} ONLINE</span>
             </div>
 
             <div className="hidden lg:flex items-center gap-1.5 text-slate-400 text-xs">
